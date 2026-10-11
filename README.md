@@ -2,7 +2,7 @@
 
 Recompute any [Hak Me](https://t.me/hakme_app_bot/hakme) raffle draw yourself and check that the announced winners are exactly the ones the rules produce.
 
-**Open in the browser:** https://redeyeddev.github.io/hakme-raffle-verifier/?contest=12, or by the seed hash shown in the raffle: `?hash=<64 hex chars>`
+**Open in the browser:** https://redeyeddev.github.io/hakme-raffle-verifier/?contest=12, or by the seed hash shown in the raffle: `?hash=<64 hex chars>`. The page is in English by default; `?lang=ru` or `?lang=ua` switches the language.
 
 **Or run locally** (Python 3, standard library only):
 

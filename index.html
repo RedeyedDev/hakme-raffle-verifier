@@ -56,7 +56,7 @@
 <main>
   <header>
     <h1>Hak Me Raffle Verifier</h1>
-    <div class="lang"><button data-lang="en">EN</button><button data-lang="ru">RU</button></div>
+    <div class="lang"><button data-lang="en">EN</button><button data-lang="ru">RU</button><button data-lang="ua">UA</button></div>
   </header>
   <p class="muted" data-i18n="intro"></p>
 
@@ -164,15 +164,51 @@ const I18N = {
     badInput: 'Введи номер раффла или хеш сида из 64 символов.', hashNotFound: 'Раффла с таким хешем сида нет. Проверь, что скопировал его целиком.',
     foundByHash: 'Найден по хешу сида: раффл #{id}',
   },
+  ua: {
+    intro: 'Будь-який раффл Hak Me можна перерахувати за публічними даними. Сторінка бере дані розіграшу з API гри, а маяк випадковості — напряму в drand, і заново проводить розіграш у твоєму браузері. Код відкритий: його можна прочитати, зберегти або запустити офлайн.',
+    contestph: 'Номер раффлу або хеш сіду', verify: 'Перевірити', meph: 'Твій id (необовʼязково — щоб знайти свої квитки)', advanced: 'Додатково: вставити дані / змінити API',
+    pasteHint: 'Встав збережену відповідь /contests/:id/fairness — перевірка пройде без звернення до API гри.',
+    howTitle: 'Як влаштований розіграш',
+    steps: [
+      'До відкриття раффлу сервер обирає секретний <code>seed</code> і публікує <code>sha256(seed)</code> — commitment. Після цього непомітно підмінити сід неможливо.',
+      'Під час закриття продажів за розіграшем закріплюється раунд <a href="https://drand.love">drand</a> quicknet — перший, що вийде не раніше ніж через 30 с після закриття. drand веде League of Entropy; кожен раунд — пороговий BLS-підпис, його неможливо ні передбачити, ні підробити, зокрема й грі.',
+      'Ключ розіграшу = <code>HMAC-SHA256(seed, drandRandomness)</code>. Жодна половина сама нічого не вирішує: сід зафіксовано до початку продажів, маяка не існувало до їх кінця.',
+      'Список квитків = <code>[[userId, квитків], …]</code>, відсортований за userId. Його хеш — <code>sha256(JSON.stringify(list))</code>.',
+      'Для призу <code>i</code>: <code>HMAC-SHA256(ключ, "contestId:i:ticketListHash")</code>. Перші 4 байти читаються як uint32, діляться на 2³² і множаться на кількість квитків, що залишилися, — виходить позиція у зваженому списку. У переможця згорає 1 квиток.',
+      'Раффли, розіграні до появи маяка, використовують ключем сам сід (лише commit-reveal).',
+    ],
+    source: 'Вихідний код:', sourceTail: 'Там же є версія на Python без залежностей — verify.py.',
+    loading: 'Завантажую дані…', notDrawn: 'Цей раффл ще не розіграно.', commitment: 'Commitment сіду, опублікований до старту',
+    pinned: 'Закріплений раунд drand', notPinned: 'Раунд drand закріпиться під час закриття продажів.',
+    allOk: 'Усі перевірки пройдено. Розіграш відтворюється один в один.', someBad: 'Є розбіжність — дивись рядки з ✗.',
+    cSeed: 'sha256(seed) збігається з commitment, опублікованим до старту',
+    cBeaconSig: 'Раунд drand {r}: BLS-підпис валідний для цього раунду (перевірено ключем League of Entropy)',
+    cBeaconSigSkip: 'BLS-перевірку пропущено: криптобібліотека не завантажилася (відкрий сторінку через https). randomness = sha256(підпису) все одно перевіряється.',
+    cBeaconRand: 'Випадковість drand = sha256(підпису)', cBeaconMatch: 'Випадковість, яку використала гра, збігається з опублікованою drand',
+    cTiming: 'Раунд вийшов через {d} с після закриття продажів (потрібно ≥ {m} с)', cDrawn: 'Розіграш проведено через {d} с після виходу раунду',
+    cLegacy: 'Раунду drand немає: раффл розіграно до появи маяка (commit-reveal лише сіду).',
+    cTickets: 'Хеш списку квитків збігається ({p} гравців, {t} квитків)',
+    cWinners: 'Усіх {n} переможців перераховано, вони збігаються', cWinnersBad: 'Не збіглися {n} з {total} переможців',
+    winners: 'Переможці', thPrize: 'Приз', thRecomputed: 'Перераховано', thAnnounced: 'Оголошено',
+    you: 'Ти: #{id}, {t} квитків із {total}. Шанс на перший приз був {pct}%.', youNone: 'У #{id} не було квитків у цьому раффлі.',
+    participants: 'Список квитків', error: 'Помилка: ',
+    badInput: 'Введи номер раффлу або хеш сіду з 64 символів.', hashNotFound: 'Раффлу з таким хешем сіду немає. Перевір, що скопіював його повністю.',
+    foundByHash: 'Знайдено за хешем сіду: раффл #{id}',
+  },
 };
 
-let lang = (new URLSearchParams(location.search).get('lang') || navigator.language || 'en').toLowerCase().startsWith('ru') ? 'ru' : 'en';
+const LANGS = { en: 'en', ru: 'ru', ua: 'uk', uk: 'uk' };
+let lang = (() => {
+  // English unless explicitly chosen; no auto-detect from the browser language.
+  const q = (new URLSearchParams(location.search).get('lang') || '').toLowerCase();
+  return q === 'uk' ? 'ua' : q in I18N ? q : 'en';
+})();
 const t = (k, vars = {}) => String(I18N[lang][k] ?? I18N.en[k] ?? k).replace(/\{(\w+)\}/g, (_, v) => vars[v] ?? '');
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function applyLang() {
-  document.documentElement.lang = lang;
+  document.documentElement.lang = LANGS[lang];
   document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll('[data-i18n-ph]').forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
   document.querySelectorAll('.lang button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
