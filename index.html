@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hak Me Raffle Verifier</title>
+<meta name="description" content="Recompute any Hak Me raffle draw yourself: seed commitment, drand beacon, ticket list, every winner.">
+<style>
+  :root {
+    --bg: #0b0e14; --panel: #131824; --line: #232b3b; --text: #e6e9f0; --muted: #8a93a6;
+    --accent: #51eaff; --ok: #3ddc97; --bad: #ff5c7a; --warn: #ffc857; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f6f7fb; --panel: #ffffff; --line: #e1e5ee; --text: #151a24; --muted: #5b6475; --accent: #0a84a8; --ok: #13875a; --bad: #c8284a; --warn: #9a6500; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 16px; margin: 28px 0 10px; }
+  .muted { color: var(--muted); }
+  .lang button { background: none; border: 0; color: var(--muted); cursor: pointer; font: inherit; padding: 2px 4px; }
+  .lang button[aria-pressed="true"] { color: var(--accent); font-weight: 600; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-top: 16px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  input, textarea { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: inherit; }
+  input { flex: 1 1 160px; min-width: 0; }
+  textarea { width: 100%; min-height: 120px; font-family: var(--mono); font-size: 12px; }
+  button.primary { background: var(--accent); color: #041018; border: 0; border-radius: 8px; padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.primary:disabled { opacity: .5; cursor: default; }
+  details summary { cursor: pointer; color: var(--muted); margin-top: 12px; }
+  ol.steps { padding-left: 20px; margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+  ol.steps code, .mono { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+  .banner { border-radius: 10px; padding: 14px 16px; font-weight: 600; margin-top: 16px; }
+  .banner.ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+  .banner.bad { background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad); }
+  .banner.info { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+  ul.checks { list-style: none; padding: 0; margin: 0; }
+  ul.checks li { display: grid; grid-template-columns: 22px 1fr; gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  ul.checks li:last-child { border-bottom: 0; }
+  .i-ok { color: var(--ok); } .i-bad { color: var(--bad); } .i-warn { color: var(--warn); } .i-info { color: var(--muted); }
+  .detail { display: block; color: var(--muted); font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; }
+  td.prize { white-space: normal; }
+  tr.me td { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .participants { max-height: 320px; overflow-y: auto; }
+  a { color: var(--accent); }
+  footer { margin-top: 40px; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Hak Me Raffle Verifier</h1>
+    <div class="lang"><button data-lang="en">EN</button><button data-lang="ru">RU</button></div>
+  </header>
+  <p class="muted" data-i18n="intro"></p>
+
+  <div class="panel">
+    <div class="row">
+      <input id="contest" autocomplete="off" spellcheck="false" data-i18n-ph="contestph" aria-label="Raffle number or seed hash">
+      <button class="primary" id="run" data-i18n="verify"></button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="me" inputmode="numeric" data-i18n-ph="meph" aria-label="Your user id">
+    </div>
+    <details>
+      <summary data-i18n="advanced"></summary>
+      <p class="muted" data-i18n="pasteHint"></p>
+      <textarea id="json" spellcheck="false" placeholder='{"contestId": 12, "drawSeed": "…", …}'></textarea>
+      <div class="row" style="margin-top:8px">
+        <input id="api" value="https://api.redeyedlabs.com" aria-label="API base URL">
+      </div>
+    </details>
+  </div>
+
+  <div id="out"></div>
+
+  <h2 data-i18n="howTitle"></h2>
+  <ol class="steps" id="steps"></ol>
+
+  <footer class="muted">
+    <span data-i18n="source"></span>
+    <a href="https://github.com/RedeyedDev/hakme-raffle-verifier">github.com/RedeyedDev/hakme-raffle-verifier</a>.
+    <span data-i18n="sourceTail"></span>
+  </footer>
+</main>
+
+<script type="module">
+const DRAND = {
+  chainHash: '52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971',
+  publicKey: '83cf0f2896adee7eb8b5f01fcad3912212c437e0073e911fb90022d3e760183c8c4b450b6a0a6c3ac6a5776a2d1064510d1fec758c921cc22b0e17e63aaf4bcb5ed66304de9cf809bd274ca73bab4af5a6e9c76a4bc09e76eae8991ef5ece45a',
+  genesis: 1692803367,
+  period: 3,
+  dst: 'BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_',
+  relays: ['https://api.drand.sh', 'https://api2.drand.sh', 'https://drand.cloudflare.com'],
+};
+const CLOSE_MARGIN_SEC = 30;
+
+const I18N = {
+  en: {
+    intro: 'Every Hak Me raffle can be recomputed from public data. This page fetches the draw data from the game API and the randomness beacon straight from drand, then re-runs the draw in your browser. The source is open, so you can read it, save it, or run it offline.',
+    contestph: 'Raffle # or seed hash', verify: 'Verify', meph: 'Your user id (optional, to find your tickets)', advanced: 'Advanced: paste data / change API',
+    pasteHint: 'Paste a saved /contests/:id/fairness response to verify it without contacting the game API.',
+    howTitle: 'How the draw works',
+    steps: [
+      'Before the raffle opens, the server picks a secret <code>seed</code> and publishes <code>sha256(seed)</code>, the commitment. After that the seed can’t be swapped without it showing.',
+      'When sales close, the draw is pinned to a <a href="https://drand.love">drand</a> quicknet round: the first round at least 30 s after closing. drand is run by the League of Entropy. Every round is a threshold BLS signature, so nobody can predict it or forge it, the game included.',
+      'Draw key = <code>HMAC-SHA256(seed, drandRandomness)</code>. Neither half alone decides anything: the seed was fixed before sales opened, and the beacon didn’t exist until after they closed.',
+      'Ticket list = <code>[[userId, tickets], …]</code> sorted by userId. Its hash is <code>sha256(JSON.stringify(list))</code>.',
+      'For prize <code>i</code>: <code>HMAC-SHA256(key, "contestId:i:ticketListHash")</code>. The first 4 bytes are read as a uint32, divided by 2³² and multiplied by the tickets remaining. That gives a position in the weighted list. The winner burns one ticket.',
+      'Raffles drawn before the beacon shipped use the seed alone as the key (commit-reveal only).',
+    ],
+    source: 'Source:', sourceTail: 'There’s also a standard-library Python version, verify.py.',
+    loading: 'Fetching data…', notDrawn: 'This raffle isn’t drawn yet.', commitment: 'Seed commitment, published before the start',
+    pinned: 'drand round pinned for this draw', notPinned: 'The drand round is pinned when sales close.',
+    allOk: 'All checks passed. The draw is exactly reproducible.', someBad: 'Mismatch. See the ✗ lines below.',
+    cSeed: 'sha256(seed) equals the commitment published before the start',
+    cBeaconSig: 'drand round {r}: BLS signature is valid for this round (checked against the League of Entropy public key)',
+    cBeaconSigSkip: 'BLS check skipped: the crypto library couldn’t load (open this page over https). randomness = sha256(signature) is still checked.',
+    cBeaconRand: 'drand randomness = sha256(signature)', cBeaconMatch: 'The randomness used by the game matches what drand published',
+    cTiming: 'The round came out {d} s after sales closed (must be ≥ {m} s)', cDrawn: 'The draw ran {d} s after the round came out',
+    cLegacy: 'No drand round: this raffle was drawn before the beacon shipped (seed-only commit-reveal).',
+    cTickets: 'Ticket list hash matches ({p} players, {t} tickets)',
+    cWinners: 'All {n} winners recomputed and match', cWinnersBad: '{n} of {total} winners don’t match',
+    winners: 'Winners', thPrize: 'Prize', thRecomputed: 'Recomputed', thAnnounced: 'Announced',
+    you: 'You: #{id}, {t} tickets out of {total}. Your chance at the first prize was {pct}%.', youNone: 'User #{id} had no tickets in this raffle.',
+    participants: 'Ticket list', error: 'Error: ',
+    badInput: 'Enter a raffle number or a 64-character seed hash.', hashNotFound: 'No raffle has this seed hash. Check that you copied it in full.',
+    foundByHash: 'Found by seed hash: raffle #{id}',
+  },
+  ru: {
+    intro: 'Любой раффл Hak Me можно пересчитать по публичным данным. Страница берёт данные розыгрыша из API игры, а маяк случайности — напрямую у drand, и заново проводит розыгрыш в твоём браузере. Код открыт: его можно прочитать, сохранить или запустить офлайн.',
+    contestph: 'Номер раффла или хеш сида', verify: 'Проверить', meph: 'Твой id (необязательно — чтобы найти свои билеты)', advanced: 'Дополнительно: вставить данные / сменить API',
+    pasteHint: 'Вставь сохранённый ответ /contests/:id/fairness — проверка пройдёт без обращения к API игры.',
+    howTitle: 'Как устроен розыгрыш',
+    steps: [
+      'До открытия раффла сервер выбирает секретный <code>seed</code> и публикует <code>sha256(seed)</code> — commitment. После этого подменить сид незаметно нельзя.',
+      'При закрытии продаж за розыгрышем закрепляется раунд <a href="https://drand.love">drand</a> quicknet — первый, который выйдет не раньше чем через 30 с после закрытия. drand ведёт League of Entropy; каждый раунд — пороговая BLS-подпись, её нельзя ни предсказать, ни подделать, в том числе игре.',
+      'Ключ розыгрыша = <code>HMAC-SHA256(seed, drandRandomness)</code>. Ни одна половина сама ничего не решает: сид зафиксирован до начала продаж, маяка не существовало до их конца.',
+      'Список билетов = <code>[[userId, билетов], …]</code>, отсортированный по userId. Его хеш — <code>sha256(JSON.stringify(list))</code>.',
+      'Для приза <code>i</code>: <code>HMAC-SHA256(ключ, "contestId:i:ticketListHash")</code>. Первые 4 байта читаются как uint32, делятся на 2³² и умножаются на число оставшихся билетов — получается позиция во взвешенном списке. У победителя сгорает 1 билет.',
+      'Раффлы, разыгранные до появления маяка, используют ключом сам сид (только commit-reveal).',
+    ],
+    source: 'Исходники:', sourceTail: 'Там же есть версия на Python без зависимостей — verify.py.',
+    loading: 'Загружаю данные…', notDrawn: 'Этот раффл ещё не разыгран.', commitment: 'Commitment сида, опубликован до старта',
+    pinned: 'Закреплённый раунд drand', notPinned: 'Раунд drand закрепится при закрытии продаж.',
+    allOk: 'Все проверки пройдены. Розыгрыш воспроизводится один в один.', someBad: 'Есть расхождение — смотри строки с ✗.',
+    cSeed: 'sha256(seed) совпадает с commitment, опубликованным до старта',
+    cBeaconSig: 'Раунд drand {r}: BLS-подпись валидна для этого раунда (проверено ключом League of Entropy)',
+    cBeaconSigSkip: 'BLS-проверка пропущена: криптобиблиотека не загрузилась (открой страницу по https). randomness = sha256(подписи) всё равно проверяется.',
+    cBeaconRand: 'Случайность drand = sha256(подписи)', cBeaconMatch: 'Случайность, которую использовала игра, совпадает с опубликованной drand',
+    cTiming: 'Раунд вышел через {d} с после закрытия продаж (нужно ≥ {m} с)', cDrawn: 'Розыгрыш проведён через {d} с после выхода раунда',
+    cLegacy: 'Раунда drand нет: раффл разыгран до появления маяка (commit-reveal только сида).',
+    cTickets: 'Хеш списка билетов совпадает ({p} игроков, {t} билетов)',
+    cWinners: 'Все {n} победителей пересчитаны и совпадают', cWinnersBad: 'Не совпали {n} из {total} победителей',
+    winners: 'Победители', thPrize: 'Приз', thRecomputed: 'Пересчитано', thAnnounced: 'Объявлено',
+    you: 'Ты: #{id}, {t} билетов из {total}. Шанс на первый приз был {pct}%.', youNone: 'У #{id} не было билетов в этом раффле.',
+    participants: 'Список билетов', error: 'Ошибка: ',
+    badInput: 'Введи номер раффла или хеш сида из 64 символов.', hashNotFound: 'Раффла с таким хешем сида нет. Проверь, что скопировал его целиком.',
+    foundByHash: 'Найден по хешу сида: раффл #{id}',
+  },
+};
+
+let lang = (new URLSearchParams(location.search).get('lang') || navigator.language || 'en').toLowerCase().startsWith('ru') ? 'ru' : 'en';
+const t = (k, vars = {}) => String(I18N[lang][k] ?? I18N.en[k] ?? k).replace(/\{(\w+)\}/g, (_, v) => vars[v] ?? '');
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-ph]').forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
+  document.querySelectorAll('.lang button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
+  $('steps').innerHTML = I18N[lang].steps.map((s) => `<li>${s}</li>`).join('');
+  if (lastRender) lastRender();
+}
+
+// ── crypto ────────────────────────────────────────────────────────────
+const enc = new TextEncoder();
+const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+const unhex = (h) => new Uint8Array(h.match(/.{2}/g).map((b) => parseInt(b, 16)));
+const sha256 = async (bytes) => new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+async function hmac(keyStr, msgStr) {
+  const key = await crypto.subtle.importKey('raw', enc.encode(keyStr), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(msgStr)));
+}
+
+let blsPromise = null;
+const loadBls = () => (blsPromise ??= import('./vendor/noble-bls12-381.js').then((m) => m.bls12_381).catch(() => null));
+
+async function verifyBls(beacon) {
+  const bls = await loadBls();
+  if (!bls) return null;
+  const roundBytes = new Uint8Array(8);
+  new DataView(roundBytes.buffer).setBigUint64(0, BigInt(beacon.round));
+  const msg = await sha256(roundBytes);
+  try {
+    const point = bls.G1.ProjectivePoint.fromAffine(bls.G1.hashToCurve(msg, { DST: DRAND.dst }).toAffine());
+    return bls.verifyShortSignature(beacon.signature, point, DRAND.publicKey);
+  } catch {
+    return false;
+  }
+}
+
+async function fetchJson(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${url} → HTTP ${r.status}`);
+  return r.json();
+}
+async function fetchBeacon(round) {
+  let last;
+  for (const relay of DRAND.relays) {
+    try { return await fetchJson(`${relay}/${DRAND.chainHash}/public/${round}`); } catch (e) { last = e; }
+  }
+  throw last;
+}
+
+// ── verification ──────────────────────────────────────────────────────
+async function verify(data) {
+  const checks = [];
+  const add = (status, text, detail) => checks.push({ status, text, detail });
+  const seed = data.drawSeed;
+
+  const seedHash = hex(await sha256(enc.encode(seed)));
+  add(seedHash === String(data.drawSeedHash).toLowerCase() ? 'ok' : 'bad', t('cSeed'), seedHash);
+
+  let drawKey = seed;
+  if (data.drandRound) {
+    const beacon = await fetchBeacon(data.drandRound);
+    const sigOk = Number(beacon.round) === Number(data.drandRound) ? await verifyBls(beacon) : false;
+    if (sigOk === null) add('warn', t('cBeaconSigSkip'));
+    else add(sigOk ? 'ok' : 'bad', t('cBeaconSig', { r: data.drandRound }), `${DRAND.relays[0]}/${DRAND.chainHash}/public/${data.drandRound}`);
+    const rand = hex(await sha256(unhex(beacon.signature)));
+    add(rand === beacon.randomness ? 'ok' : 'bad', t('cBeaconRand'), rand);
+    add(beacon.randomness === data.drandRandomness ? 'ok' : 'bad', t('cBeaconMatch'));
+    const roundTime = DRAND.genesis + (Number(data.drandRound) - 1) * DRAND.period;
+    const closeGap = Math.round(roundTime - Date.parse(data.endAt) / 1000);
+    add(closeGap >= CLOSE_MARGIN_SEC ? 'ok' : 'bad', t('cTiming', { d: closeGap, m: CLOSE_MARGIN_SEC }), new Date(roundTime * 1000).toISOString());
+    if (data.drawnAt) {
+      const drawGap = Math.round(Date.parse(data.drawnAt) / 1000 - roundTime);
+      add(drawGap >= 0 ? 'ok' : 'bad', t('cDrawn', { d: drawGap }));
+    }
+    drawKey = hex(await hmac(seed, beacon.randomness));
+  } else {
+    add('info', t('cLegacy'));
+  }
+
+  const entries = data.participants
+    .map((p) => (Array.isArray(p) ? [Number(p[0]), Number(p[1])] : [Number(p.userId), Number(p.ticketCount)]))
+    .filter((e) => e[1] > 0)
+    .sort((a, b) => a[0] - b[0]);
+  const snapshot = entries.map((e) => [...e]);
+  const totalTickets = entries.reduce((s, e) => s + e[1], 0);
+  const ticketHash = hex(await sha256(enc.encode(JSON.stringify(entries))));
+  add(ticketHash === String(data.ticketListHash).toLowerCase() ? 'ok' : 'bad',
+    t('cTickets', { p: entries.length, t: totalTickets }), ticketHash);
+
+  const rows = [];
+  for (const w of data.winners) {
+    if (!entries.length) { rows.push({ w, uid: null }); continue; }
+    const h = await hmac(drawKey, `${data.contestId}:${w.drawIndex}:${ticketHash}`);
+    const num = new DataView(h.buffer).getUint32(0);
+    const target = (num / 0x100000000) * entries.reduce((s, e) => s + e[1], 0);
+    let acc = 0, idx = 0;
+    for (let i = 0; i < entries.length; i++) { acc += entries[i][1]; if (target < acc) { idx = i; break; } }
+    const uid = entries[idx][0];
+    rows.push({ w, uid });
+    entries[idx][1] -= 1;
+    if (entries[idx][1] <= 0) entries.splice(idx, 1);
+  }
+  const mismatches = rows.filter((r) => r.uid !== Number(r.w.userId)).length;
+  if (rows.length) {
+    add(mismatches ? 'bad' : 'ok', mismatches ? t('cWinnersBad', { n: mismatches, total: rows.length }) : t('cWinners', { n: rows.length }));
+  }
+
+  return { checks, rows, snapshot, totalTickets, ok: checks.every((c) => c.status !== 'bad') };
+}
+
+// ── rendering ─────────────────────────────────────────────────────────
+let lastRender = null;
+const ICON = { ok: ['✓', 'i-ok'], bad: ['✗', 'i-bad'], warn: ['!', 'i-warn'], info: ['·', 'i-info'] };
+
+function renderPending(data) {
+  lastRender = () => {
+    $('out').innerHTML = `
+      <div class="banner info">${esc(t('notDrawn'))}</div>
+      <div class="panel">
+        <strong>#${esc(data.contestId)} ${esc(data.title || '')}</strong>
+        <ul class="checks">
+        <li><span class="i-info">·</span><span>${esc(t('commitment'))}<span class="detail">${esc(data.drawSeedHash)}</span></span></li>
+        <li><span class="i-info">·</span><span>${data.drandRound
+          ? `${esc(t('pinned'))}: <a href="${DRAND.relays[0]}/${DRAND.chainHash}/public/${data.drandRound}">#${esc(data.drandRound)}</a>`
+          : esc(t('notPinned'))}</span></li>
+      </ul></div>${foundNote(data)}`;
+  };
+  lastRender();
+}
+
+let lookedUpByHash = false;
+const foundNote = (data) => (lookedUpByHash ? `<p class="muted">${esc(t('foundByHash', { id: data.contestId }))}</p>` : '');
+
+function renderResult(data, res) {
+  lastRender = () => {
+    const me = Number($('me').value) || null;
+    const mine = me ? res.snapshot.find((e) => e[0] === me) : null;
+    const youLine = me
+      ? `<p>${esc(mine
+          ? t('you', { id: me, t: mine[1], total: res.totalTickets, pct: ((mine[1] / res.totalTickets) * 100).toFixed(2) })
+          : t('youNone', { id: me }))}</p>`
+      : '';
+    $('out').innerHTML = `
+      <div class="banner ${res.ok ? 'ok' : 'bad'}">${esc(res.ok ? t('allOk') : t('someBad'))}</div>
+      <div class="panel">
+        <strong>#${esc(data.contestId)} ${esc(data.title || '')}</strong>
+        <ul class="checks">${res.checks.map((c) => `
+          <li><span class="${ICON[c.status][1]}">${ICON[c.status][0]}</span>
+          <span>${esc(c.text)}${c.detail ? `<span class="detail">${esc(c.detail)}</span>` : ''}</span></li>`).join('')}
+        </ul>
+      </div>
+      ${foundNote(data)}
+      <h2>${esc(t('winners'))}</h2>
+      ${youLine}
+      <div class="panel table-wrap"><table>
+        <thead><tr><th>#</th><th>${esc(t('thPrize'))}</th><th>${esc(t('thRecomputed'))}</th><th>${esc(t('thAnnounced'))}</th><th></th></tr></thead>
+        <tbody>${res.rows.map((r) => {
+          const ok = r.uid === Number(r.w.userId);
+          return `<tr class="${me && Number(r.w.userId) === me ? 'me' : ''}">
+            <td>${r.w.drawIndex}</td><td class="prize">${esc(r.w.displayName || r.w.prizeId)}</td>
+            <td class="mono">#${esc(r.uid ?? '—')}</td><td class="mono">#${esc(r.w.userId)}</td>
+            <td class="${ok ? 'i-ok' : 'i-bad'}">${ok ? '✓' : '✗'}</td></tr>`;
+        }).join('')}</tbody>
+      </table></div>
+      <details><summary>${esc(t('participants'))} (${res.snapshot.length})</summary>
+        <div class="panel participants table-wrap"><table><tbody>${res.snapshot.map(([u, c]) =>
+          `<tr class="${u === me ? 'me' : ''}"><td class="mono">#${u}</td><td class="mono">×${c}</td></tr>`).join('')}
+        </tbody></table></div>
+      </details>`;
+  };
+  lastRender();
+}
+
+async function run() {
+  const btn = $('run');
+  btn.disabled = true;
+  $('out').innerHTML = `<div class="banner info">${esc(t('loading'))}</div>`;
+  try {
+    let data;
+    lookedUpByHash = false;
+    const pasted = $('json').value.trim();
+    if (pasted) {
+      data = JSON.parse(pasted);
+    } else {
+      const q = $('contest').value.trim().replace(/^#/, '');
+      const api = $('api').value.replace(/\/$/, '');
+      const url = new URL(location.href);
+      url.searchParams.delete('contest');
+      url.searchParams.delete('hash');
+      if (/^[0-9a-f]{64}$/i.test(q)) {
+        url.searchParams.set('hash', q.toLowerCase());
+        history.replaceState(null, '', url);
+        const r = await fetch(`${api}/contests/fairness/by-hash/${q.toLowerCase()}`);
+        if (r.status === 404) throw new Error(t('hashNotFound'));
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        data = await r.json();
+        lookedUpByHash = true;
+      } else if (/^\d+$/.test(q)) {
+        url.searchParams.set('contest', q);
+        history.replaceState(null, '', url);
+        data = await fetchJson(`${api}/contests/${q}/fairness`);
+      } else {
+        throw new Error(t('badInput'));
+      }
+    }
+    if (data.status !== 'completed' || !data.drawSeed) renderPending(data);
+    else renderResult(data, await verify(data));
+  } catch (e) {
+    lastRender = null;
+    $('out').innerHTML = `<div class="banner bad">${esc(t('error'))}${esc(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.querySelectorAll('.lang button').forEach((b) => b.addEventListener('click', () => { lang = b.dataset.lang; applyLang(); }));
+$('run').addEventListener('click', run);
+$('contest').addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
+$('me').addEventListener('input', () => lastRender && lastRender());
+applyLang();
+loadBls();
+
+const qs = new URLSearchParams(location.search);
+if (qs.get('me')) $('me').value = qs.get('me');
+const preset = qs.get('hash') || qs.get('contest');
+if (preset) { $('contest').value = preset; run(); }
+</script>
+</body>
+</html>
